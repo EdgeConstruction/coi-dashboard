@@ -171,6 +171,10 @@ thead .mv-freeze-band,thead .mv-freeze-tier{z-index:30;top:0;position:sticky}
 .mv-min.last{border-right:2px solid rgba(0,0,0,0.15) !important}
 .mv-min-val{font-family:'DM Mono',monospace;font-size:11px;font-weight:700;color:#1A4F7A;display:inline-block}
 .mv-band-sep-row td{border-top:3px solid rgba(0,0,0,0.14) !important}
+/* Trade-by-band view: band label column */
+.tv-band-cell{background:var(--edge-mid);color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;text-align:center;padding:7px 10px;border-right:2px solid rgba(255,255,255,0.15);border-bottom:1px solid rgba(255,255,255,0.1);white-space:nowrap;min-width:140px;width:140px}
+.tv-band-cell.tv-freeze{position:sticky;left:0;z-index:18;box-shadow:2px 0 6px rgba(0,0,0,0.08)}
+.tv-trade-hdr{background:var(--edge-navy);color:rgba(255,255,255,0.5);font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:8px 12px;vertical-align:bottom;white-space:nowrap}
 
 /* SHARED PILLS */
 .tbadge{display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;margin-right:5px;letter-spacing:.03em;vertical-align:middle;font-family:'Barlow Condensed',sans-serif}
@@ -202,7 +206,8 @@ thead .mv-freeze-band,thead .mv-freeze-tier{z-index:30;top:0;position:sticky}
   <div id="trade-filters" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
     <div class="ctrl"><label>Subcontract Value</label>
       <select id="cv">
-        <option value="prequal" selected>Prequalification</option>
+        <option value="all">All Contract Values</option>
+        <option value="prequal">Prequalification</option>
         <option value="0">Under $50K</option>
         <option value="1">$50K – $250K</option>
         <option value="2">$250K – $1M</option>
@@ -363,7 +368,9 @@ const MX_INS_GROUPS=[
   {label:"Pollution",                   cls:"pol-hdr", n:2},
 ];
 
-function getCI(v){return{"prequal":0,"0":1,"1":2,"2":3,"3":4,"4":5}[String(v)];}
+function getCI(v){return{"prequal":0,"all":0,"0":1,"1":2,"2":3,"3":4,"4":5}[String(v)]||0;}
+const BAND_LABELS_ARR=["Prequalification","Under $50K","$50K – $250K","$250K – $1M","$1M – $5M","Over $5M"];
+const BAND_CI_ARR=[0,1,2,3,4,5];
 
 let currentView="trade";
 function setView(v){
@@ -378,11 +385,13 @@ function setView(v){
   if(v==="matrix")renderMatrix();else renderTrade();
 }
 function clearFilters(){
-  document.getElementById("cv").value="prequal";document.getElementById("tf").value="all";
+  document.getElementById("cv").value="all";document.getElementById("tf").value="all";
   document.getElementById("ins").value="all";document.getElementById("search").value="";
-  updatePqBadge();if(currentView==="trade")renderTrade();
+  updatePqBadge();
+  if(currentView==="trade") renderTrade();
+  else if(currentView==="matrix") renderMatrix();
 }
-function updatePqBadge(){document.getElementById("pq-badge").className="pq-badge"+(document.getElementById("cv").value==="prequal"?" show":"");}
+function updatePqBadge(){const cv=document.getElementById("cv").value;document.getElementById("pq-badge").className="pq-badge"+(cv==="prequal"?" show":"");}
 function updateLegend(){
   const bar=document.getElementById("legend-bar");
   const base=`<div class="leg-section"><span class="leg-title">Coverage Status</span><div class="leg-item"><span class="leg-dot ld-match"></span>Meets EDGE Coverage</div><div class="leg-item"><span class="leg-dot ld-min"></span>Meets Approved Minimum</div><div class="leg-item"><span class="leg-dot ld-na"></span>Not Required</div></div>`;
@@ -401,21 +410,32 @@ function buildTradeSelect(){
 // ── TRADE VIEW ──────────────────────────────────────────────────
 function renderTrade(){
   updatePqBadge();
-  const cvVal=document.getElementById("cv").value,tradeVal=document.getElementById("tf").value,insFilter=document.getElementById("ins").value;
-  const ci=getCI(cvVal);
+  const cvVal=document.getElementById("cv").value;
+  const tradeVal=document.getElementById("tf").value;
+  const insFilter=document.getElementById("ins").value;
   const visCols=ALL_LINES.filter(h=>insFilter==="all"||h.ins===insFilter);
+
+  // ── TRADE-BY-BAND MODE ────────────────────────────────────────
+  // When a specific trade is selected AND cv="all", show one row per
+  // contract value band with all insurance columns.
+  if(tradeVal!=="all" && cvVal==="all"){
+    renderTradeByBand(tradeVal, visCols, insFilter);
+    return;
+  }
+
+  // ── STANDARD MODE ────────────────────────────────────────────
+  // When cv=all and tf=all, show all trades at Prequalification as default
+  const ci=getCI(cvVal);
 
   const thead=document.createElement("thead");
   const r1=document.createElement("tr");
-  // Frozen trade header
-  const thT=document.createElement("th");thT.className="th-group trade-th tv-freeze";thT.rowSpan=2;thT.textContent="TRADE / COVERAGE";r1.appendChild(thT);
+  const thT=document.createElement("th");thT.className="th-group trade-th tv-freeze";thT.rowSpan=2;thT.innerHTML=(cvVal==="all"&&tradeVal==="all")?"TRADE / COVERAGE <span style='font-size:9px;font-weight:400;opacity:.6'>(Prequalification)</span>":"TRADE / COVERAGE";r1.appendChild(thT);
   INS_GROUPS.forEach(g=>{
     if(insFilter!=="all"&&g.ins!==insFilter)return;
     const cnt=visCols.filter(c=>c.ins===g.ins).length;if(!cnt)return;
     const th=document.createElement("th");th.className=`th-group ${g.cls}`;th.colSpan=cnt;th.textContent=g.label;th.dataset.ins=g.ins;r1.appendChild(th);
   });
   const r2=document.createElement("tr");
-  // Hidden cell to maintain sticky layout
   const dummy=document.createElement("th");dummy.className="th-sub tv-freeze";dummy.style.display="none";r2.appendChild(dummy);
   visCols.forEach(h=>{const th=document.createElement("th");th.className="th-sub";th.textContent=h.sub;th.dataset.ins=h.ins;r2.appendChild(th);});
   thead.appendChild(r1);thead.appendChild(r2);
@@ -427,7 +447,6 @@ function renderTrade(){
     if(tradeVal==="all"&&t.tier!==lastTier){
       const sr=document.createElement("tr");sr.className="sec-row t"+t.tier;
       const td=document.createElement("td");td.colSpan=1+visCols.length;td.textContent=TIER_LABELS[t.tier];
-      // also freeze the sec-row left cell
       td.classList.add("tv-freeze");
       sr.appendChild(td);tbody.appendChild(sr);lastTier=t.tier;
     }
@@ -436,6 +455,75 @@ function renderTrade(){
     const nc=document.createElement("td");nc.className="tv-freeze";
     nc.innerHTML=`<span class="tbadge tb${t.tier}">T${t.tier}</span>${t.name}`+(cvVal==="prequal"?`<span class="pq-tag">Prequal</span>`:"");
     row.appendChild(nc);
+    visCols.forEach(vc=>{
+      const td=document.createElement("td");td.dataset.ins=vc.ins;
+      td.innerHTML=pillHTML(A[vc.fi],vc.fi);row.appendChild(td);
+    });
+    tbody.appendChild(row);
+  });
+
+  const table=document.createElement("table");table.className="trade-view";table.appendChild(thead);table.appendChild(tbody);
+  const outer=document.createElement("div");outer.className="tv-scroll-outer";outer.appendChild(table);
+  document.getElementById("trade-panel").innerHTML="";document.getElementById("trade-panel").appendChild(outer);
+  attachHover();
+}
+
+// ── TRADE-BY-BAND VIEW ────────────────────────────────────────────
+// Shows a single trade across all 6 contract value bands.
+// Left frozen column = contract value band label.
+// Each row = one band. Columns = same insurance layout.
+function renderTradeByBand(tradeName, visCols, insFilter){
+  const trade = TRADES.find(t=>t.name===tradeName);
+  if(!trade) return;
+  const tier = trade.tier;
+
+  const thead=document.createElement("thead");
+
+  // Row 1: frozen "Contract Value" corner + insurance group headers
+  const r1=document.createElement("tr");
+  const thCorner=document.createElement("th");
+  thCorner.className="th-group trade-th tv-freeze";
+  thCorner.rowSpan=2;
+  thCorner.style.minWidth="140px";
+  thCorner.style.width="140px";
+  thCorner.textContent="Contract Value";
+  r1.appendChild(thCorner);
+  INS_GROUPS.forEach(g=>{
+    if(insFilter!=="all"&&g.ins!==insFilter)return;
+    const cnt=visCols.filter(c=>c.ins===g.ins).length;if(!cnt)return;
+    const th=document.createElement("th");th.className=`th-group ${g.cls}`;th.colSpan=cnt;th.textContent=g.label;th.dataset.ins=g.ins;r1.appendChild(th);
+  });
+
+  // Row 2: sub-column labels
+  const r2=document.createElement("tr");
+  const dummy=document.createElement("th");dummy.className="th-sub tv-freeze";dummy.style.display="none";r2.appendChild(dummy);
+  visCols.forEach(h=>{const th=document.createElement("th");th.className="th-sub";th.textContent=h.sub;th.dataset.ins=h.ins;r2.appendChild(th);});
+  thead.appendChild(r1);thead.appendChild(r2);
+
+  // Trade info header row (spans all cols, shows trade name + tier badge)
+  const tbody=document.createElement("tbody");
+  const infoRow=document.createElement("tr");
+  infoRow.className=`sec-row t${tier}`;
+  const infoTd=document.createElement("td");
+  infoTd.colSpan=1+visCols.length;
+  infoTd.classList.add("tv-freeze");
+  infoTd.innerHTML=`<span class="tbadge tb${tier}">T${tier}</span>${tradeName}&nbsp;&nbsp;<span style="font-size:9px;font-weight:400;letter-spacing:.03em;text-transform:none;opacity:.75">${TIER_LABELS[tier].split('·')[1]?.trim()||''}</span>`;
+  infoRow.appendChild(infoTd);
+  tbody.appendChild(infoRow);
+
+  // One data row per contract value band
+  BAND_LABELS_ARR.forEach((bandLabel, idx)=>{
+    const ci=BAND_CI_ARR[idx];
+    const A=APPROVED[tier][ci];
+    const row=document.createElement("tr");
+
+    // Band label cell (frozen)
+    const bc=document.createElement("td");
+    bc.className="tv-band-cell tv-freeze";
+    bc.textContent=bandLabel;
+    row.appendChild(bc);
+
+    // Coverage cells
     visCols.forEach(vc=>{
       const td=document.createElement("td");td.dataset.ins=vc.ins;
       td.innerHTML=pillHTML(A[vc.fi],vc.fi);row.appendChild(td);
